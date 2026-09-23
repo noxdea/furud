@@ -80,6 +80,18 @@ RSpec.describe Furud do
       outside = described_class.adjust(described_class.parse("=SUM(A5:A10)"),
                                        { type: :insert_rows, sheet: nil, at: 2, count: 1 })
       expect(described_class.render(outside)).to eq("=SUM(A6:A11)")
+
+      origin = ref(1, 1, sheet: "Budget")
+      columns = described_class.parse("=SUM(A1:D1)+$D$2+Budget!C3+'Other Sheet'!D4", origin: origin)
+      inserted_columns = described_class.adjust(columns,
+        { type: :insert_columns, sheet: "Budget", at: 3, count: 2 })
+      expect(described_class.render(inserted_columns, origin: origin))
+        .to eq("=SUM(A1:F1)+$F$2+Budget!E3+'Other Sheet'!D4")
+
+      deleted_columns = described_class.adjust(columns,
+        { type: :delete_columns, sheet: "Budget", at: 3, count: 2 })
+      expect(described_class.render(deleted_columns, origin: origin))
+        .to eq("=SUM(A1:B1)+#REF!+#REF!+'Other Sheet'!D4")
     end
 
     it "rejects malformed formulas rather than evaluating partial input" do
