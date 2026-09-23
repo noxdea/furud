@@ -42,6 +42,27 @@ RSpec.describe Furud do
       expect(described_class.render(described_class.translate(ast, from: from, to: to))).to eq("=B1+$A$1+$A1+B$1")
     end
 
+    it "turns copied relative references below the grid into #REF!" do
+      from = ref(2, 2)
+      expect(described_class.render(described_class.translate(described_class.parse("=B1"), from: from, to: ref(1, 2)))).to eq("=#REF!")
+      expect(described_class.render(described_class.translate(described_class.parse("=A2"), from: from, to: ref(2, 1)))).to eq("=#REF!")
+
+      range = described_class.parse("=SUM(B1:C2)")
+      expect(described_class.render(described_class.translate(range, from: from, to: ref(1, 2)))).to eq("=SUM(#REF!)")
+      expect(described_class.render(described_class.translate(described_class.parse("=A1:B2"), from: from, to: ref(1, 1)))).to eq("=#REF!")
+    end
+
+    it "preserves absolute references when relative references underflow" do
+      from = ref(2, 2)
+      absolute = described_class.parse("=$A$1")
+      expect(described_class.render(described_class.translate(absolute, from: from, to: ref(1, 1)))).to eq("=$A$1")
+      absolute_range = described_class.parse("=$A$1:B2")
+      expect(described_class.render(described_class.translate(absolute_range, from: from, to: ref(1, 1)))).to eq("=$A$1:A1")
+
+      mixed = described_class.parse("=$A1")
+      expect(described_class.render(described_class.translate(mixed, from: from, to: ref(1, 2)))).to eq("=#REF!")
+    end
+
     it "moves unqualified references across sheets but keeps explicit sheet references" do
       from = ref(2, 2, sheet: "Source")
       to = ref(2, 3, sheet: "Destination")

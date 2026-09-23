@@ -50,13 +50,15 @@ module Furud
       from = coerce_reference(from)
       to = coerce_reference(to)
       transform(ast) do |node|
-        next node unless %i[reference qualified_reference].include?(node.type)
-
-        reference = node.value
-        row = reference.absolute_row ? reference.row : to.row + reference.row - from.row
-        column = reference.absolute_column ? reference.column : to.column + reference.column - from.column
-        sheet = node.type == :reference && reference.sheet == from.sheet ? to.sheet : reference.sheet
-        ref_node(reference.with(row: row, column: column, sheet: sheet), node.type)
+        case node.type
+        when :range
+          children = node.children.map { |child| translate_reference(child, from, to) }
+          children.any? { |child| child.type == :error } ? ref_error_node : Node.new(type: :range, children: children)
+        when :reference, :qualified_reference
+          translate_reference(node, from, to)
+        else
+          node
+        end
       end
     end
 
@@ -145,6 +147,20 @@ module Furud
 
       children = node.children.map { |child| transform(child, &block) }
       children == node.children ? node : Node.new(type: node.type, value: node.value, children: children)
+    end
+
+    def translate_reference(node, from, to)
+      reference = node.value
+      row = reference.absolute_row ? reference.row : to.row + reference.row - from.row
+      column = reference.absolute_column ? reference.column : to.column + reference.column - from.column
+      return ref_error_node if row < 1 || column < 1
+
+      sheet = node.type == :reference && reference.sheet == from.sheet ? to.sheet : reference.sheet
+      ref_node(reference.with(row: row, column: column, sheet: sheet), node.type)
+    end
+
+    def ref_error_node
+      Node.new(type: :error, value: ErrorValue.new(code: :ref))
     end
 
     def adjust_node(node, operation)
