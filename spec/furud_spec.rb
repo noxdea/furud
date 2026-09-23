@@ -315,6 +315,19 @@ RSpec.describe Furud do
       expect(functions.call("TWICE")).to eq(Furud::ErrorValue.new(code: :value))
       expect(functions.call("UNKNOWN")).to eq(Furud::ErrorValue.new(code: :name))
     end
+
+    it "preserves statistical errors returned by variance functions" do
+      functions = described_class.standard
+      expect(functions.call("VAR.S", 4)).to eq(Furud::ErrorValue.new(code: :div0))
+      expect(functions.call("VAR.P", [])).to eq(Furud::ErrorValue.new(code: :num))
+      expect(functions.call("VAR.S", 1, 2, 3)).to eq(1.0)
+      expect(functions.call("VAR.P", 1, 2, 3)).to be_within(1e-12).of(2.0 / 3)
+
+      engine = Furud::Engine.new
+      cell = Furud::Reference.new(row: 1, column: 1)
+      engine.set(cell, "=VAR.S(4)")
+      expect(engine.value(cell)).to eq(Furud::ErrorValue.new(code: :div0))
+    end
   end
 
   describe Furud::Format do

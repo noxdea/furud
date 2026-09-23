@@ -185,8 +185,14 @@ module Furud
       register(registry, "SMALL", 2) { |array, k| numeric_values([array]).sort.fetch(integer!(k) - 1) { ErrorValue.new(code: :num) } }
       register(registry, "STDEV.S", 1..255) { |*xs| deviation(numeric_values(xs), sample: true) }
       register(registry, "STDEV.P", 1..255) { |*xs| deviation(numeric_values(xs), sample: false) }
-      register(registry, "VAR.S", 1..255) { |*xs| deviation(numeric_values(xs), sample: true)**2 }
-      register(registry, "VAR.P", 1..255) { |*xs| deviation(numeric_values(xs), sample: false)**2 }
+      register(registry, "VAR.S", 1..255) do |*xs|
+        result = deviation(numeric_values(xs), sample: true)
+        result.is_a?(ErrorValue) ? result : result**2
+      end
+      register(registry, "VAR.P", 1..255) do |*xs|
+        result = deviation(numeric_values(xs), sample: false)
+        result.is_a?(ErrorValue) ? result : result**2
+      end
       register(registry, "COUNTIF", 2) { |range, criteria| flatten([range]).count { |x| criterion_match?(x, criteria) } }
       register(registry, "COUNTIFS", 2..255) do |*xs|
         ranges = xs.each_slice(2).map { |range, criteria| [flatten([range]), criteria] }
