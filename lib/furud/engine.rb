@@ -92,7 +92,7 @@ module Furud
       @dirty.clear
       previous_spills = @spill_values.dup
       pending.each { |reference| @previous_values[reference] = @values[reference] unless @previous_values.key?(reference) }
-      cycle_groups = strongly_connected_components(pending)
+      formula_order, cycle_groups = strongly_connected_components(pending)
       @cycles = @cycles.reject { |cycle| cycle.any? { |reference| pending.include?(reference) } } + cycle_groups
       cycle_members = cycle_groups.flatten.to_set
 
@@ -104,7 +104,9 @@ module Furud
         cycle_members.each { |reference| store_value(reference, ErrorValue.new(code: :cycle)) }
       end
 
-      ordered_formulas(pending, cycle_members).each do |reference|
+      formula_order.each do |reference|
+        next if cycle_members.include?(reference)
+
         evaluate_cell(reference) unless @dirty.include?(reference)
       end
       pending.each { |reference| @previous_values.delete(reference) unless @values.key?(reference) }
@@ -202,44 +204,37 @@ module Furud
     end
 
     def dependencies(reference)
-      (@precedents.fetch(reference, []).flat_map do |precedent|
+      precedents = @precedents.fetch(reference, [])
+      if precedents.all? { |precedent| precedent.is_a?(Reference) }
+        return precedents.select { |precedent| @formulas.key?(precedent) }
+      end
+
+      (precedents.flat_map do |precedent|
         if precedent.is_a?(Reference)
           [precedent]
         else
-          @formulas.keys.select { |candidate| precedent.include?(candidate) }
+          @formulas.each_key.select { |candidate| precedent.include?(candidate) }
         end
       end).select { |candidate| @formulas.key?(candidate) }.uniq
     end
 
-    def ordered_formulas(pending, cycle_members)
-      ordered = []
-      visited = Set.new
-      visit = lambda do |reference|
-        return if visited.include?(reference) || cycle_members.include?(reference)
-
-        visited.add(reference)
-        dependencies(reference).each { |dependency| visit.call(dependency) if pending.include?(dependency) }
-        ordered << reference if @formulas.key?(reference)
-      end
-      pending.select { |reference| @formulas.key?(reference) }.sort_by { |reference| sort_key(reference) }.each { |reference| visit.call(reference) }
-      ordered
-    end
-
     def strongly_connected_components(pending)
-      formula_cells = pending.select { |reference| @formulas.key?(reference) }.to_set
+      formula_cells = pending.select { |reference| @formulas.key?(reference) }
       index = 0
       indices = {}
       low = {}
       stack = []
       on_stack = Set.new
       components = []
+      ordered = []
       connect = lambda do |reference|
         indices[reference] = low[reference] = index
         index += 1
         stack << reference
         on_stack.add(reference)
-        dependencies(reference).each do |dependency|
-          next unless formula_cells.include?(dependency)
+        precedents = dependencies(reference)
+        precedents.each do |dependency|
+          next unless pending.include?(dependency) && @formulas.key?(dependency)
 
           if !indices.key?(dependency)
             connect.call(dependency)
@@ -250,6 +245,14 @@ module Furud
         end
         return unless low[reference] == indices[reference]
 
+        if stack.last == reference
+          stack.pop
+          on_stack.delete(reference)
+          ordered << reference
+          components << [reference] if precedents.include?(reference)
+          next
+        end
+
         component = []
         loop do
           member = stack.pop
@@ -257,11 +260,14 @@ module Furud
           component << member
           break if member == reference
         end
-        self_reference = dependencies(reference).include?(reference)
-        components << component.sort_by { |cell| sort_key(cell) } if component.length > 1 || self_reference
+        component.sort_by! { |cell| sort_key(cell) } if component.length > 1
+        ordered.concat(component)
+        self_reference = precedents.include?(reference)
+        components << component if component.length > 1 || self_reference
       end
-      formula_cells.sort_by { |reference| sort_key(reference) }.each { |reference| connect.call(reference) unless indices.key?(reference) }
-      components
+      formula_cells.sort_by! { |reference| sort_key(reference) }
+      formula_cells.each { |reference| connect.call(reference) unless indices.key?(reference) }
+      [ordered, components]
     end
 
     def evaluate_cell(reference)
