@@ -1,0 +1,128 @@
+module Furud
+  VERSION: String
+  ERROR_CODES: Hash[Symbol, String]
+
+  class Error < StandardError
+  end
+
+  class ParseError < Error
+  end
+
+  class Reference
+    attr_reader sheet: String?
+    attr_reader row: Integer
+    attr_reader column: Integer
+    attr_reader absolute_row: bool
+    attr_reader absolute_column: bool
+    def initialize: (?sheet: String?, row: Integer, column: Integer, ?absolute_row: bool, ?absolute_column: bool) -> void
+    def with: (**untyped) -> Reference
+  end
+
+  class Area
+    attr_reader sheet: String?
+    attr_reader top: Integer
+    attr_reader left: Integer
+    attr_reader bottom: Integer
+    attr_reader right: Integer
+    def initialize: (?sheet: String?, top: Integer, left: Integer, bottom: Integer, right: Integer) -> void
+    def include?: (Reference) -> bool
+  end
+
+  class ErrorValue
+    attr_reader code: Symbol
+    def initialize: (code: Symbol) -> void
+    def to_s: () -> String
+  end
+
+  class Node
+    attr_reader type: Symbol
+    attr_reader value: untyped
+    attr_reader children: Array[Node]
+    def initialize: (type: Symbol, ?value: untyped, ?children: Array[Node]) -> void
+  end
+
+  class Adjustment
+    attr_reader type: Symbol
+    attr_reader sheet: String?
+    attr_reader at: Integer
+    attr_reader count: Integer
+    def initialize: (type: Symbol, ?sheet: String?, at: Integer, ?count: Integer) -> void
+  end
+
+  class ArrayValue
+    attr_reader rows: Array[Array[untyped]]
+    def initialize: (rows: Array[Array[untyped]]) -> void
+    def height: () -> Integer
+    def width: () -> Integer
+    def []: (Integer row, Integer column) -> untyped
+  end
+
+  module Formula
+    def self.parse: (String source, ?origin: Reference | Hash[Symbol, untyped]?) -> Node
+    def self.render: (Node ast, ?origin: Reference | Hash[Symbol, untyped]?) -> String
+    def self.references: (Node ast) -> Array[Reference | Area]
+    def self.translate: (Node ast, from: Reference | Hash[Symbol, untyped], to: Reference | Hash[Symbol, untyped]) -> Node
+    def self.adjust: (Node ast, (Adjustment | Hash[Symbol, untyped]) operation) -> Node
+  end
+
+  module Source
+    def value_at: (Reference) -> untyped
+  end
+
+  class Engine
+    attr_reader source: untyped
+    attr_reader locale: Symbol
+    def initialize: (?untyped source, ?functions: Functions::Registry, ?locale: Symbol, ?iterative: bool, ?max_iterations: Integer, ?epsilon: Numeric) -> void
+    def set: (Reference, untyped input) -> untyped
+    def clear: (Reference) -> nil
+    def value: (Reference) -> untyped
+    def formula: (Reference) -> String?
+    def recalculate: () -> Array[Reference]
+    def dirty: () -> Set[Reference]
+    def cycles: () -> Array[Array[Reference]]
+    def insert_rows: (String? sheet, Integer at, ?Integer count) -> self
+    def delete_rows: (String? sheet, Integer at, ?Integer count) -> self
+    def insert_columns: (String? sheet, Integer at, ?Integer count) -> self
+    def delete_columns: (String? sheet, Integer at, ?Integer count) -> self
+    def define_name: (String name, (Reference | Area) area) -> (Reference | Area)
+    def precedents: (Reference) -> Array[Reference | Area]
+    def dependents: (Reference) -> Array[Reference]
+  end
+
+  module Functions
+    class Entry
+      attr_reader name: String
+      attr_reader arity: untyped
+      attr_reader volatile: bool
+      def call: (*untyped) -> untyped
+      def accepts?: (Integer) -> bool
+    end
+
+    class Registry
+      include Enumerable[Entry]
+      def register: (String name, arity: Integer | Range[Integer] | Array[Integer], ?volatile: bool) { (*untyped) -> untyped } -> self
+      def []: (String name) -> Entry?
+      def names: () -> Array[String]
+      def each: () { (Entry) -> void } -> self
+      def size: () -> Integer
+      def call: (String name, *untyped args) -> untyped
+    end
+
+    def self.standard: () -> Registry
+  end
+
+  module Format
+    class Section
+      attr_reader pattern: String
+      attr_reader condition: [String, Numeric]?
+      attr_reader color: Symbol?
+    end
+    class Spec
+      attr_reader sections: Array[Section]
+      attr_reader locale: Symbol
+    end
+    def self.parse: (String pattern, ?locale: Symbol) -> Spec
+    def self.apply: (untyped value, Spec spec) -> [String, Hash[Symbol, untyped]]
+    def self.infer: (String text, locale: Symbol) -> [untyped, String]
+  end
+end
