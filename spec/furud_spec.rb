@@ -188,6 +188,41 @@ RSpec.describe Furud do
       expect(actual).to eq(formulas.map { |cell, _formula| fresh.value(cell) })
     end
 
+    it "matches full recalculation across 10,000 seeded dependency graphs" do
+      operators = %w[+ - *]
+
+      10_000.times do |seed|
+        random = Random.new(seed)
+        references = (1..7).map { |column| ref(1, column) }
+        inputs = Array.new(3) { random.rand(-10..10) }
+        formulas = [[references[3], "=A1+B1*C1"]]
+        (4...references.length).each do |index|
+          left = Furud::Formula.column_name(random.rand(1..index))
+          right = Furud::Formula.column_name(random.rand(1..index))
+          operator = operators[random.rand(operators.length)]
+          formulas << [references[index], "=#{left}1#{operator}#{right}1"]
+        end
+
+        incremental = described_class.new
+        inputs.each_with_index { |value, index| incremental.set(references[index], value) }
+        formulas.each { |cell, formula| incremental.set(cell, formula) }
+        incremental.recalculate
+
+        changed_input = random.rand(inputs.length)
+        inputs[changed_input] = random.rand(-10..10)
+        incremental.set(references[changed_input], inputs[changed_input])
+        actual = references.map { |cell| incremental.value(cell) }
+
+        full = described_class.new
+        inputs.each_with_index { |value, index| full.set(references[index], value) }
+        formulas.each { |cell, formula| full.set(cell, formula) }
+        full.recalculate
+        expected = references.map { |cell| full.value(cell) }
+
+        expect(actual).to eq(expected), "seed=#{seed}"
+      end
+    end
+
     it "invalidates formulas depending on ranges when a cell in the range changes" do
       engine = described_class.new
       total = ref(1, 2)
