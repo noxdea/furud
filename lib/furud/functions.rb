@@ -330,7 +330,14 @@ module Furud
       register(registry, "TODAY", 0, volatile: true) { Date.today }
       register(registry, "NOW", 0, volatile: true) { Time.now }
       register(registry, "WEEKDAY", 1..2) { |d, type = 1| weekday(date_value(d), integer!(type)) }
-      register(registry, "WEEKNUM", 1..2) { |d, type = 1| date_value(d).strftime("%U").to_i + 1 + (integer!(type) == 2 ? 0 : 0) }
+      register(registry, "WEEKNUM", 1..2) do |d, type = 1|
+        week_start = case integer!(type)
+        when 1 then 0
+        when 2 then 1
+        else next ErrorValue.new(code: :num)
+        end
+        week_number(date_value(d), week_start)
+      end
       register(registry, "ISOWEEKNUM", 1) { |d| date_value(d).cweek }
       register(registry, "NETWORKDAYS", 2..3) do |start, finish, holidays = []|
         holidays = flatten([holidays]).map { |d| date_value(d) }.to_set
@@ -709,6 +716,10 @@ module Furud
     def date_serial(value) = (value.to_date - Date.new(1899, 12, 30)).to_i
     def date_value(value) = value.is_a?(Date) ? value : Date.new(1899, 12, 30) + number!(value).to_i
     def serial_fraction(value) = value.is_a?(Time) ? (value.hour * 3600 + value.min * 60 + value.sec + value.nsec / 1e9) / 86_400.0 : number!(value) % 1
+    def week_number(date, week_start)
+      first_day = Date.new(date.year, 1, 1).wday
+      (date.yday - 1 + (first_day - week_start) % 7) / 7 + 1
+    end
     def weekday(date, type) = type == 2 ? ((date.wday + 6) % 7) + 1 : type == 3 ? (date.wday + 6) % 7 : date.wday + 1
     def year_fraction(a, b, basis) = basis == 1 ? (b - a).to_i / (a.leap? ? 366.0 : 365.0) : (b.year - a.year) + (b.yday - a.yday) / 365.0
 

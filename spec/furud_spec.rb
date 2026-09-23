@@ -443,6 +443,22 @@ RSpec.describe Furud do
       expect(functions.call("FILTER", [[1, 2], [3, 4]], [true, false]).rows).to eq([[1], [3]])
     end
 
+    it "calculates Sunday- and Monday-start week numbers at year boundaries" do
+      functions = described_class.standard
+
+      expect(functions.call("WEEKNUM", Date.new(2024, 1, 7))).to eq(2)
+      expect(functions.call("WEEKNUM", Date.new(2024, 1, 7), 1)).to eq(2)
+      expect(functions.call("WEEKNUM", Date.new(2024, 1, 7), 2)).to eq(1)
+      expect(functions.call("WEEKNUM", Date.new(2023, 1, 1), 1)).to eq(1)
+      expect(functions.call("WEEKNUM", Date.new(2023, 1, 1), 2)).to eq(1)
+      expect(functions.call("WEEKNUM", Date.new(2023, 1, 2), 1)).to eq(1)
+      expect(functions.call("WEEKNUM", Date.new(2023, 1, 2), 2)).to eq(2)
+      expect(functions.call("WEEKNUM", Date.new(2023, 12, 31), 1)).to eq(53)
+      expect(functions.call("WEEKNUM", Date.new(2023, 12, 31), 2)).to eq(53)
+      expect(functions.call("WEEKNUM", Date.new(2024, 12, 31), 2)).to eq(53)
+      expect(functions.call("WEEKNUM", Date.new(2024, 1, 7), 3)).to eq(Furud::ErrorValue.new(code: :num))
+    end
+
     it "matches the UNIQUE row, column, and exactly-once case table" do
       functions = described_class.standard
       rows = Furud::ArrayValue.new(rows: [[1, "a"], [1, "a"], [2, "b"], [3, "c"]])
