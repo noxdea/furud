@@ -233,6 +233,32 @@ RSpec.describe Furud do
       expect(engine.value(ref(2, 2))).to eq(5)
     end
 
+    it "sorts array columns and spills the sorted matrix" do
+      engine = described_class.new
+      engine.set(ref(1, 1), 4)
+      engine.set(ref(1, 2), 1)
+      engine.set(ref(2, 1), 2)
+      engine.set(ref(2, 2), 3)
+      engine.set(ref(1, 4), "=SORT(A1:B2,1,1,TRUE)")
+      engine.set(ref(4, 4), "=SORT(A1:B2,1,-1,TRUE)")
+      engine.set(ref(7, 4), "=SORT(A1:B2,1,1,FALSE)")
+
+      expect(engine.value(ref(1, 4))).to eq(1)
+      expect(engine.value(ref(1, 5))).to eq(4)
+      expect(engine.value(ref(2, 4))).to eq(3)
+      expect(engine.value(ref(2, 5))).to eq(2)
+
+      expect(engine.value(ref(4, 4))).to eq(4)
+      expect(engine.value(ref(4, 5))).to eq(1)
+      expect(engine.value(ref(5, 4))).to eq(2)
+      expect(engine.value(ref(5, 5))).to eq(3)
+
+      expect(engine.value(ref(7, 4))).to eq(2)
+      expect(engine.value(ref(7, 5))).to eq(3)
+      expect(engine.value(ref(8, 4))).to eq(4)
+      expect(engine.value(ref(8, 5))).to eq(1)
+    end
+
     it "returns #SPILL! rather than overwriting an occupied cell" do
       engine = described_class.new
       anchor = ref(1, 1)

@@ -396,7 +396,14 @@ module Furud
         raise RangeError if r <= 0 || c <= 0 || r * c > 1_000_000
         ArrayValue.new(rows: Array.new(r) { |i| Array.new(c) { |j| number!(start) + (i * c + j) * number!(step) } })
       end
-      register(registry, "SORT", 1..4) { |x, index = 1, order = 1, by_column = false| ArrayValue.new(rows: matrix(x).sort_by { |row| row[integer!(index) - 1] }.then { |rows| integer!(order).negative? ? rows.reverse : rows }) }
+      register(registry, "SORT", 1..4) do |x, index = 1, order = 1, by_column = false|
+        rows = matrix(x)
+        columns = truthy?(by_column)
+        items = columns ? rows.transpose : rows
+        sorted = items.sort_by { |item| item[integer!(index) - 1] }
+        sorted.reverse! if integer!(order).negative?
+        ArrayValue.new(rows: columns ? sorted.transpose : sorted)
+      end
       register(registry, "UNIQUE", 1..3) { |x, _by_col = false, _exactly_once = false| values = matrix(x).flatten.uniq; ArrayValue.new(rows: values.map { |v| [v] }) }
     end
 
