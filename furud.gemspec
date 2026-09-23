@@ -9,7 +9,7 @@ Gem::Specification.new do |spec|
   spec.email = ["t.yudai92@gmail.com"]
 
   spec.summary = "Dependency-free spreadsheet formula and recalculation engine"
-  spec.description = "Parses spreadsheet formulas, evaluates 191 standard functions, tracks dependencies, recalculates incrementally, and formats values."
+  spec.description = "Parses spreadsheet formulas, evaluates 192 standard functions, tracks dependencies, recalculates incrementally, and formats values."
   spec.homepage = "https://github.com/noxdea/furud"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2.0"

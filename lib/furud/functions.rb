@@ -7,7 +7,7 @@ require "set"
 module Furud
   module Functions
     Entry = Struct.new(:name, :arity, :volatile, :implementation, keyword_init: true) do
-      ERROR_HANDLERS = %w[IF IFERROR IFNA COUNTIF COUNTIFS SUMIF SUMIFS AVERAGEIF AVERAGEIFS].freeze
+      ERROR_HANDLERS = %w[IF IFERROR IFNA FILTER COUNTIF COUNTIFS SUMIF SUMIFS AVERAGEIF AVERAGEIFS].freeze
 
       def call(*args)
         return ErrorValue.new(code: :value) unless arity_match?(args.length)
@@ -383,13 +383,57 @@ module Furud
       register(registry, "N", 1) { |x| x == true ? 1 : x == false || x.nil? || x.is_a?(String) ? 0 : x.is_a?(ErrorValue) ? x : number!(x) }
       register(registry, "NA", 0) { ErrorValue.new(code: :na) }
       register(registry, "TYPE", 1) { |x| x.is_a?(Numeric) ? 1 : x.is_a?(String) ? 2 : x == true || x == false ? 4 : x.is_a?(ErrorValue) ? 16 : 64 }
-      register(registry, "ERROR.TYPE", 1) { |x| x.is_a?(ErrorValue) ? { div0: 2, value: 3, ref: 4, name: 5, num: 6, na: 7 }.fetch(x.code, 1) : ErrorValue.new(code: :na) }
+      register(registry, "ERROR.TYPE", 1) do |x|
+        if x.is_a?(ErrorValue)
+          { div0: 2, value: 3, ref: 4, name: 5, num: 6, na: 7, spill: 9, calc: 14 }.fetch(x.code, 1)
+        else
+          ErrorValue.new(code: :na)
+        end
+      end
       register(registry, "FORMULATEXT", 1) { |x| x.is_a?(String) && x.start_with?("=") ? x : ErrorValue.new(code: :na) }
       register(registry, "HYPERLINK", 1..2) { |url, label = url| text(label) }
       register(registry, "CELL", 1..2) { |info, _ref = nil| text(info).downcase == "filename" ? "" : ErrorValue.new(code: :value) }
       register(registry, "ISREF", 1) { |x| x.is_a?(Reference) || x.is_a?(Area) }
       register(registry, "INDIRECT", 1..2) { |_ref, _a1 = true| ErrorValue.new(code: :ref) }
       register(registry, "OFFSET", 3..5, volatile: true) { |_ref, _rows, _columns, _height = 1, _width = 1| ErrorValue.new(code: :ref) }
+      register(registry, "FILTER", 2..3) do |array, include, *fallback|
+        rows = matrix(array)
+        mask = matrix(include)
+        rows = [rows] if !rows.empty? && !rows.first.is_a?(Array)
+        mask = [mask] if !mask.empty? && !mask.first.is_a?(Array)
+        invalid_matrix = [rows, mask].any? do |values|
+          values.empty? || !values.first.is_a?(Array) || values.first.empty? ||
+            values.any? { |row| !row.is_a?(Array) || row.length != values.first.length }
+        end
+
+        if invalid_matrix
+          ErrorValue.new(code: :value)
+        else
+          by_row = mask.length == rows.length && mask.first.length == 1
+          by_column = mask.length == 1 && mask.first.length == rows.first.length
+          unless by_row || by_column
+            ErrorValue.new(code: :value)
+          else
+            selectors = by_row ? mask.map(&:first) : mask.first
+            error = selectors.find { |value| value.is_a?(ErrorValue) }
+            if error
+              error
+            else
+              indices = selectors.each_index.select { |index| truthy?(selectors[index]) }
+              if indices.empty?
+                fallback.empty? ? ErrorValue.new(code: :calc) : fallback.first
+              else
+                selected = if by_row
+                             indices.map { |index| rows[index] }
+                           else
+                             rows.map { |row| indices.map { |index| row[index] } }
+                           end
+                ArrayValue.new(rows: selected)
+              end
+            end
+          end
+        end
+      end
       register(registry, "TRANSPOSE", 1) { |x| ArrayValue.new(rows: matrix(x).transpose) }
       register(registry, "SEQUENCE", 1..4) do |rows, columns = 1, start = 1, step = 1|
         r = integer!(rows); c = integer!(columns)

@@ -308,7 +308,7 @@ module Furud
           end
           return [:reference, parse_a1(raw, nil), position]
         end
-        if (raw = @scanner.scan(/#(?:DIV\/0!|VALUE!|REF!|NAME\?|N\/A|NUM!|CYCLE!|SPILL!)/i))
+        if (raw = @scanner.scan(/#(?:DIV\/0!|VALUE!|REF!|NAME\?|N\/A|NUM!|CYCLE!|SPILL!|CALC!)/i))
           code = ERROR_CODES[raw.upcase]
           return [:error, ErrorValue.new(code: code), position]
         end

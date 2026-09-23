@@ -27,7 +27,8 @@ module Furud
   end
 
   ERROR_CODES = { div0: "#DIV/0!", value: "#VALUE!", ref: "#REF!", name: "#NAME?",
-                  na: "#N/A", num: "#NUM!", cycle: "#CYCLE!", spill: "#SPILL!" }.freeze
+                  na: "#N/A", num: "#NUM!", cycle: "#CYCLE!", spill: "#SPILL!",
+                  calc: "#CALC!" }.freeze
   ErrorValue = Data.define(:code) do
     def initialize(code:)
       super(code: code.to_sym)

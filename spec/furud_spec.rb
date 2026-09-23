@@ -259,6 +259,63 @@ RSpec.describe Furud do
       expect(engine.value(ref(8, 5))).to eq(1)
     end
 
+    it "filters rows and columns and spills the selected cells" do
+      engine = described_class.new
+      engine.set(ref(1, 1), 1)
+      engine.set(ref(1, 2), "one")
+      engine.set(ref(2, 1), -1)
+      engine.set(ref(2, 2), "skip")
+      engine.set(ref(3, 1), 2)
+      engine.set(ref(3, 2), "two")
+      engine.set(ref(1, 4), "=FILTER(A1:B3,A1:A3>0)")
+
+      expect(engine.value(ref(1, 4))).to eq(1)
+      expect(engine.value(ref(1, 5))).to eq("one")
+      expect(engine.value(ref(2, 4))).to eq(2)
+      expect(engine.value(ref(2, 5))).to eq("two")
+
+      engine.set(ref(5, 1), 1)
+      engine.set(ref(5, 2), 0)
+      engine.set(ref(5, 3), 2)
+      engine.set(ref(6, 1), "left")
+      engine.set(ref(6, 2), "middle")
+      engine.set(ref(6, 3), "right")
+      engine.set(ref(5, 5), "=FILTER(A5:C6,A5:C5>0)")
+
+      expect(engine.value(ref(5, 5))).to eq(1)
+      expect(engine.value(ref(5, 6))).to eq(2)
+      expect(engine.value(ref(6, 5))).to eq("left")
+      expect(engine.value(ref(6, 6))).to eq("right")
+    end
+
+    it "uses FILTER fallbacks, reports empty results, and validates include masks" do
+      engine = described_class.new
+      engine.set(ref(1, 1), 1)
+      engine.set(ref(2, 1), 2)
+      engine.set(ref(1, 2), "=FILTER(A1:A2,A1:A2<0)")
+      engine.set(ref(1, 3), "=FILTER(A1:A2,A1:A2<0,\"empty\")")
+      engine.set(ref(1, 4), "=FILTER(A1:A2,A1:A2<0,{10,20})")
+      engine.set(ref(1, 6), "=FILTER(A1:A2,A1:A2>0,1/0)")
+      engine.set(ref(1, 7), "=ERROR.TYPE(B1)")
+      engine.set(ref(1, 8), "=1/0")
+      engine.set(ref(1, 9), "=FILTER(A1:A2,H1:H2,\"fallback\")")
+      engine.set(ref(1, 10), "=FILTER(A1:A2,A1:A2<0,1/0)")
+      engine.set(ref(4, 2), "=FILTER(A1:B2,A1:B2)")
+
+      expect(engine.value(ref(1, 2))).to eq(Furud::ErrorValue.new(code: :calc))
+      expect(engine.value(ref(1, 3))).to eq("empty")
+      expect(engine.value(ref(1, 4))).to eq(10)
+      expect(engine.value(ref(1, 5))).to eq(20)
+      expect(engine.value(ref(1, 6))).to eq(1)
+      expect(engine.value(ref(2, 6))).to eq(2)
+      expect(engine.value(ref(1, 7))).to eq(14)
+      expect(engine.value(ref(1, 9))).to eq(Furud::ErrorValue.new(code: :div0))
+      expect(engine.value(ref(1, 10))).to eq(Furud::ErrorValue.new(code: :div0))
+      expect(engine.value(ref(4, 2))).to eq(Furud::ErrorValue.new(code: :value))
+
+      expect(Furud::Formula.render(Furud::Formula.parse("=#CALC!"))).to eq("=#CALC!")
+    end
+
     it "returns #SPILL! rather than overwriting an occupied cell" do
       engine = described_class.new
       anchor = ref(1, 1)
@@ -344,15 +401,16 @@ RSpec.describe Furud do
   end
 
   describe Furud::Functions do
-    it "provides more than 120 registered standard functions" do
+    it "registers the documented standard function set" do
       functions = described_class.standard
-      expect(functions.names.length).to be >= 120
+      expect(functions.names.length).to eq(192)
       expect(functions.call("SUM", 1, 2, 3)).to eq(6)
       expect(functions.call("AVERAGE", [2, 4, 6])).to eq(4)
       expect(functions.call("PMT", 0.1, 12, 1000)).to be_within(0.001).of(-146.763)
       expect(functions.call("NOT", true)).to be(false)
       expect(functions.call("LEFT", "Canopus", 3)).to eq("Can")
       expect(functions.call("DATE", 2024, 2, 30)).to eq(Date.new(2024, 3, 1))
+      expect(functions.call("FILTER", [[1, 2], [3, 4]], [true, false]).rows).to eq([[1], [3]])
     end
 
     it "validates custom function arity and propagates standard errors" do

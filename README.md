@@ -60,7 +60,7 @@ The parser supports A1 and R1C1 cell references, absolute and relative markers, 
 
 ## Calculation and functions
 
-The default registry contains 191 functions across arithmetic, statistics, logic, text, dates, lookup/information, and basic finance. It is extensible:
+The default registry contains 192 functions across arithmetic, statistics, logic, text, dates, lookup/information, and basic finance. It is extensible:
 
 ```ruby
 functions = Furud::Functions.standard
@@ -70,11 +70,11 @@ engine = Furud::Engine.new(source, functions: functions)
 
 The function count describes registered names, not complete Excel compatibility. Advanced statistical and financial edge cases, some date/lookup modes, and Excel's full argument-coercion rules are not exhaustive; `INDIRECT` currently parses A1 references only and does not implement its R1C1 mode.
 
-Formula errors are values: `#DIV/0!`, `#VALUE!`, `#REF!`, `#NAME?`, `#N/A`, `#NUM!`, and `#CYCLE!` (plus `#SPILL!` for occupied array spill areas). Errors propagate through calculations; `IF`, `IFERROR`, and `IFNA` evaluate only the selected branch. `iterative: true` enables bounded fixed-point evaluation for circular formulas.
+Formula errors are values: `#DIV/0!`, `#VALUE!`, `#REF!`, `#NAME?`, `#N/A`, `#NUM!`, `#CYCLE!`, `#CALC!`, and `#SPILL!` for occupied array spill areas. Errors propagate through calculations; `IF`, `IFERROR`, `IFNA`, and `FILTER` handle only the errors relevant to their selected result. `iterative: true` enables bounded fixed-point evaluation for circular formulas.
 
 Array constants and dynamic-array functions such as `SEQUENCE`, `TRANSPOSE`, and `UNIQUE` return a top-left value and spill into adjacent empty cells. Furud never overwrites non-empty cells; a blocked spill returns `#SPILL!`.
 
-Array support is an MVP subset: rectangular constants, scalar broadcasting, and selected functions (`SEQUENCE`, `SORT`, `TRANSPOSE`, `UNIQUE`) are supported; `FILTER` and full spreadsheet dynamic-array semantics are not.
+Array support is an MVP subset: rectangular constants, scalar broadcasting, and selected functions (`SEQUENCE`, `SORT`, `TRANSPOSE`, `UNIQUE`, `FILTER`) are supported. `FILTER` accepts row or column masks and an optional empty-result fallback; full spreadsheet dynamic-array semantics are not.
 
 ## Number formats
 
