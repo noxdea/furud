@@ -142,7 +142,14 @@ module Furud
           floor_ceiling(number!(number), number!(significance), name.start_with?("CEILING", "ISO"), number!(mode))
         end
       end
-      register(registry, "MROUND", 2) { |x, multiple| round_multiple(number!(x), number!(multiple)) }
+      register(registry, "MROUND", 2) do |x, multiple|
+        number = number!(x); step = number!(multiple)
+        if (number.negative? && step.positive?) || (number.positive? && step.negative?)
+          ErrorValue.new(code: :num)
+        else
+          round_multiple(number, step)
+        end
+      end
       register(registry, "COMBIN", 2) { |n, k| choose(integer!(n), integer!(k)) }
       register(registry, "COMBINA", 2) { |n, k| choose(integer!(n) + integer!(k) - 1, integer!(k)) }
       register(registry, "MULTINOMIAL", 1..100) { |*xs| factorial(xs.sum { |x| integer!(x) }) / xs.reduce(1) { |p, x| p * factorial(integer!(x)) } }
@@ -307,7 +314,10 @@ module Furud
         (b.year - a.year) * 360 + (b.month - a.month) * 30 + d2 - d1
       end
       register(registry, "EDATE", 2) { |d, months| date_value(d) >> integer!(months) }
-      register(registry, "EOMONTH", 2) { |d, months| (date_value(d) >> integer!(months)).next_month.prev_day }
+      register(registry, "EOMONTH", 2) do |d, months|
+        target = date_value(d) >> integer!(months)
+        target.next_month - target.next_month.day
+      end
       register(registry, "HOUR", 1) { |x| (serial_fraction(x) * 24).floor }
       register(registry, "MINUTE", 1) { |x| (serial_fraction(x) * 1440).floor % 60 }
       register(registry, "SECOND", 1) { |x| (serial_fraction(x) * 86_400).floor % 60 }
@@ -359,10 +369,21 @@ module Furud
         v = flatten([vector]); r = flatten([result]); i = v.rindex { |x| compare(x, lookup) <= 0 }
         i ? r[i] : ErrorValue.new(code: :na)
       end
-      register(registry, "ADDRESS", 2..5) do |row, column, abs = 1, _a1 = true, sheet = nil|
+      register(registry, "ADDRESS", 2..5) do |row, column, abs = 1, a1 = true, sheet = nil|
         r = integer!(row); c = integer!(column); mode = integer!(abs)
-        cell = "#{[c, mode == 1 || mode == 3].then { |v, absolute| absolute ? "$#{column_name(v)}" : column_name(v) }}#{mode == 1 || mode == 2 ? "$" : ""}#{r}"
-        sheet.nil? ? cell : "#{text(sheet)}!#{cell}"
+        if !r.positive? || !c.between?(1, 16_384) || !mode.between?(1, 4)
+          ErrorValue.new(code: :value)
+        else
+          cell = if truthy?(a1)
+                   name = Formula.column_name(c)
+                   "#{mode == 1 || mode == 3 ? "$#{name}" : name}#{mode == 1 || mode == 2 ? "$" : ""}#{r}"
+                 else
+                   row_reference = mode == 1 || mode == 2 ? "R#{r}" : "R[#{r}]"
+                   column_reference = mode == 1 || mode == 3 ? "C#{c}" : "C[#{c}]"
+                   row_reference + column_reference
+                 end
+          sheet.nil? ? cell : "#{Formula.render_sheet(text(sheet))}!#{cell}"
+        end
       end
       register(registry, "ROW", 0..1) { |ref = nil| ref.is_a?(Reference) ? ref.row : 1 }
       register(registry, "COLUMN", 0..1) { |ref = nil| ref.is_a?(Reference) ? ref.column : 1 }
@@ -576,7 +597,7 @@ module Furud
 
     def round_multiple(value, multiple)
       raise ZeroDivisionError if multiple.zero?
-      ((value / multiple).round) * multiple
+      (value.fdiv(multiple).round) * multiple
     end
 
     def truncate_decimal(value, digits)
@@ -592,7 +613,7 @@ module Furud
     def floor_ceiling(value, significance, ceiling, mode)
       raise ZeroDivisionError if significance.zero?
       return 0 if value.zero?
-      quotient = value / significance
+      quotient = value.fdiv(significance)
       if ceiling
         (value.negative? && mode != 0 ? quotient.floor : quotient.ceil) * significance
       else
@@ -693,13 +714,15 @@ module Furud
     end
 
     def ddb(cost, salvage, life, period, factor)
-      amount = number = 0.0
-      1.upto(integer!(period)) do |year|
-        depreciation = [cost * factor / life, number - salvage].min
-        number = year == 1 ? cost - depreciation : number - depreciation
-        amount = depreciation if year == integer!(period)
+      raise RangeError unless cost >= 0 && salvage >= 0 && life.positive? && period.positive? && factor.positive?
+
+      book_value = cost
+      depreciation = 0.0
+      1.upto(integer!(period)) do
+        depreciation = [book_value * factor / life.to_f, book_value - salvage].min
+        book_value -= depreciation
       end
-      amount
+      depreciation
     end
   end
 end

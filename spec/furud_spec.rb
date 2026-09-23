@@ -494,11 +494,114 @@ RSpec.describe Furud do
         ["PMT", [0, 10, 1000], -100.0],
         ["FILTER", [array, mismatch], Furud::ErrorValue.new(code: :value)],
         ["FILTER", [array, include_error], reference_error],
+        ["ADDRESS", [3, 2, 2], "B$3"],
+        ["ADDRESS", [3, 2, 3], "$B3"],
+        ["ADDRESS", [3, 2, 4], "B3"],
+        ["ADDRESS", [2, 3, 2, false], "R2C[3]"],
+        ["ADDRESS", [2, 3, 1, false, "Sheet 1"], "'Sheet 1'!R2C3"],
+        ["ADDRESS", [3, 2, 5], Furud::ErrorValue.new(code: :value)],
+        ["EVEN", [-3], -4],
+        ["MROUND", [-5, -2], -6],
+        ["MROUND", [5, -2], Furud::ErrorValue.new(code: :num)],
+        ["EOMONTH", [Date.new(2024, 1, 31), 0], Date.new(2024, 1, 31)],
+        ["DDB", [100, 10, 5, 2], 24.0],
+        ["DDB", [100, 10, 0, 1], Furud::ErrorValue.new(code: :num)],
         ["ERROR.TYPE", [calc_error], 14]
       ]
 
       cases.each do |name, arguments, expected|
         expect(functions.call(name, *arguments)).to eq(expected), "#{name}(#{arguments.inspect})"
+      end
+    end
+
+    it "checks explicit expected values for at least 120 standard functions" do
+      functions = described_class.standard
+      vector = Furud::ArrayValue.new(rows: [[1], [2], [3]])
+      matrix = Furud::ArrayValue.new(rows: [[1, 2], [3, 4]])
+      table = Furud::ArrayValue.new(rows: [[1, "a"], [2, "b"], [3, "c"]])
+      row_table = Furud::ArrayValue.new(rows: [[1, 2, 3], ["a", "b", "c"]])
+      reference = Furud::Reference.new(row: 5, column: 3)
+      timestamp = Time.new(2024, 1, 1, 12, 34, 56)
+      cases = [
+        # Arithmetic and math.
+        ["ABS", [-2], 2], ["ACOS", [1], 0.0], ["ACOSH", [1], 0.0], ["ASIN", [0], 0.0],
+        ["ASINH", [0], 0.0], ["ATAN", [0], 0.0], ["ATAN2", [1, 0], 0.0], ["ATANH", [0], 0.0],
+        ["COS", [0], 1.0], ["COSH", [0], 1.0], ["DEGREES", [Math::PI], 180.0], ["EXP", [0], 1.0],
+        ["INT", [-1.2], -2], ["LN", [1], 0.0], ["LOG10", [100], 2.0], ["LOG", [100], 2.0],
+        ["RADIANS", [180], Math::PI], ["SIGN", [-3], -1], ["SIN", [0], 0.0], ["SINH", [0], 0.0],
+        ["SQRT", [9], 3.0], ["TAN", [0], 0.0], ["TANH", [0], 0.0], ["EVEN", [3], 4],
+        ["ODD", [2], 3], ["FACT", [5], 120], ["FACTDOUBLE", [5], 15], ["SQRTPI", [0], 0.0],
+        ["SEC", [0], 1.0], ["SECH", [0], 1.0], ["TRUNC", [12.9], 12], ["PI", [], Math::PI],
+        ["POWER", [2, 3], 8], ["MOD", [10, 3], 1], ["QUOTIENT", [10, 3], 3], ["ROUND", [1.236, 2], 1.24],
+        ["ROUNDDOWN", [1.239, 2], 1.23], ["ROUNDUP", [1.231, 2], 1.24], ["FLOOR", [5, 2], 4],
+        ["CEILING", [5, 2], 6], ["FLOOR.MATH", [5, 2], 4], ["CEILING.MATH", [5, 2], 6],
+        ["ISO.CEILING", [5, 2], 6], ["MROUND", [5, 2], 6], ["COMBIN", [5, 2], 10],
+        ["COMBINA", [3, 2], 6], ["MULTINOMIAL", [2, 3], 10], ["GCD", [12, 18], 6], ["LCM", [4, 6], 12],
+        ["PRODUCT", [2, 3, 4], 24], ["SUM", [1, 2, 3], 6], ["SUMSQ", [2, 3], 13],
+        ["SUBTOTAL", [9, 1, 2, 3], 6],
+        # Statistics.
+        ["AVERAGE", [1, 2, 3], 2.0], ["AVERAGEA", [[1, true, false, "text"]], 0.5],
+        ["AVERAGEIF", [[1, 2, 3], ">1"], 2.5], ["AVERAGEIFS", [[1, 2, 3], [1, 2, 3], ">1"], 2.5],
+        ["COUNT", [[1, "text", true, nil]], 1], ["COUNTA", [[1, "", true, nil]], 2],
+        ["COUNTBLANK", [[nil, "", 1]], 2], ["COUNTIF", [[1, 2, 3], ">1"], 2],
+        ["COUNTIFS", [[1, 2, 3], ">=2", [1, 2, 3], "<=2"], 1], ["MAX", [[1, 4, 2]], 4],
+        ["MIN", [[1, 4, 2]], 1], ["MAXA", [[1, true, false, "text"]], 1],
+        ["MINA", [[1, true, false, "text"]], 0], ["MEDIAN", [[1, 3, 2]], 2],
+        ["MODE.SNGL", [[1, 2, 2, 3]], 2], ["LARGE", [[1, 2, 3, 4], 2], 3],
+        ["SMALL", [[1, 2, 3, 4], 2], 2], ["STDEV.S", [1, 2, 3], 1.0],
+        ["STDEV.P", [1, 2, 3], Math.sqrt(2.0 / 3)], ["VAR.S", [1, 2, 3], 1.0],
+        ["VAR.P", [1, 2, 3], 2.0 / 3],
+        # Logic and text.
+        ["TRUE", [], true], ["FALSE", [], false], ["AND", [true, 1], true], ["OR", [false, true], true],
+        ["XOR", [true, false], true], ["NOT", [true], false], ["IF", [true, "yes", "no"], "yes"],
+        ["IFNA", [Furud::ErrorValue.new(code: :na), "fallback"], "fallback"],
+        ["IFS", [false, "no", true, "yes"], "yes"], ["SWITCH", ["b", "a", 1, "b", 2, 0], 2],
+        ["CONCAT", ["a", ["b", "c"]], "abc"], ["CONCATENATE", ["a", "b"], "ab"],
+        ["TEXTJOIN", [":", true, ["a", "", "b"]], "a:b"], ["EXACT", ["same", "same"], true],
+        ["LEFT", ["Canopus", 3], "Can"], ["RIGHT", ["Canopus", 3], "pus"],
+        ["MID", ["Canopus", 2, 3], "ano"], ["LEN", ["abc"], 3], ["LOWER", ["ABC"], "abc"],
+        ["UPPER", ["abc"], "ABC"], ["PROPER", ["cANIS mAJOR"], "Canis Major"],
+        ["TRIM", ["  a   b  "], "a b"], ["CLEAN", ["\u0001abc"], "abc"], ["REPT", ["ab", 3], "ababab"],
+        ["FIND", ["a", "Canopus"], 2], ["SEARCH", ["A", "Canopus"], 2],
+        ["REPLACE", ["abcdef", 2, 3, "X"], "aXef"], ["SUBSTITUTE", ["abab", "a", "x", 2], "abxb"],
+        ["TEXT", [12, "0.00"], "12.00"], ["VALUE", ["1,234.5"], 1234.5], ["CHAR", [65], "A"],
+        ["CODE", ["A"], 65], ["UNICHAR", [9731], "☃"], ["UNICODE", ["☃"], 9731],
+        # Dates and time.
+        ["DATE", [2024, 2, 29], Date.new(2024, 2, 29)], ["DATEVALUE", ["2024-01-02"], 45_293],
+        ["DAY", [Date.new(2024, 3, 5)], 5], ["MONTH", [Date.new(2024, 3, 5)], 3],
+        ["YEAR", [Date.new(2024, 3, 5)], 2024], ["DAYS", [Date.new(2024, 1, 3), Date.new(2024, 1, 1)], 2],
+        ["DAYS360", [Date.new(2024, 1, 1), Date.new(2024, 12, 31)], 360],
+        ["EDATE", [Date.new(2024, 1, 31), 1], Date.new(2024, 2, 29)],
+        ["EOMONTH", [Date.new(2024, 1, 31), 1], Date.new(2024, 2, 29)],
+        ["HOUR", [timestamp], 12], ["MINUTE", [timestamp], 34], ["SECOND", [timestamp], 56],
+        ["TIME", [6, 0, 0], 0.25], ["TIMEVALUE", ["6:00 AM"], 0.25],
+        ["WEEKDAY", [Date.new(2024, 1, 1)], 2], ["WEEKNUM", [Date.new(2024, 1, 7)], 2],
+        ["ISOWEEKNUM", [Date.new(2024, 1, 1)], 1],
+        ["NETWORKDAYS", [Date.new(2024, 1, 1), Date.new(2024, 1, 5)], 5],
+        ["WORKDAY", [Date.new(2024, 1, 1), 5], Date.new(2024, 1, 8)],
+        ["YEARFRAC", [Date.new(2024, 1, 1), Date.new(2024, 1, 2), 1], 1.0 / 366],
+        # Lookup, information, finance, and arrays.
+        ["CHOOSE", [2, "first", "second"], "second"], ["INDEX", [matrix, 2, 1], 3],
+        ["VLOOKUP", [2, table, 2, false], "b"], ["HLOOKUP", [2, row_table, 2, false], "b"],
+        ["LOOKUP", [2, vector], 2], ["ADDRESS", [3, 2], "$B$3"], ["ROW", [reference], 5],
+        ["COLUMN", [reference], 3], ["ROWS", [matrix], 2], ["COLUMNS", [matrix], 2],
+        ["AREAS", [matrix], 1], ["ISBLANK", [nil], true], ["ISERROR", [Furud::ErrorValue.new(code: :ref)], true],
+        ["ISNUMBER", [42], true], ["ISREF", [reference], true], ["TYPE", ["text"], 2], ["N", [true], 1],
+        ["FORMULATEXT", ["=SUM(A1:A2)"], "=SUM(A1:A2)"], ["HYPERLINK", ["https://example.test", "Open"], "Open"],
+        ["FV", [0, 10, 100], -1000.0], ["PV", [0, 10, 100], -1000.0], ["NPER", [0, -100, 1000], 10.0],
+        ["NPV", [0, 1, 2, 3], 6.0], ["SLN", [100, 10, 3], 30.0], ["SYD", [100, 10, 3, 1], 45.0],
+        ["DDB", [100, 10, 5, 1], 40.0], ["EFFECT", [0.0625, 1], 0.0625], ["NOMINAL", [0.0625, 1], 0.0625],
+        ["TRANSPOSE", [matrix], [[1, 3], [2, 4]]], ["SEQUENCE", [2, 3], [[1, 2, 3], [4, 5, 6]]],
+        ["SORT", [Furud::ArrayValue.new(rows: [[3], [1], [2]])], [[1], [2], [3]]]
+      ]
+
+      names = cases.map(&:first)
+      expect(names.uniq.length).to eq(names.length)
+      expect(names.uniq.length).to be >= 120
+      cases.each do |name, arguments, expected|
+        result = functions.call(name, *arguments)
+        result = result.rows if result.is_a?(Furud::ArrayValue)
+        expect(result).to eq(expected), "#{name}(#{arguments.inspect})"
       end
     end
 
