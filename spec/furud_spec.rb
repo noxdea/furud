@@ -605,6 +605,95 @@ RSpec.describe Furud do
       end
     end
 
+    it "checks ordinary results for previously uncovered standard functions" do
+      functions = described_class.standard
+      close_cases = [
+        ["COT", [Math.atan(0.5)], 2.0], ["COTH", [Math.atanh(0.5)], 2.0],
+        ["CSC", [Math.asin(0.5)], 2.0], ["CSCH", [Math.asinh(2.0)], 0.5],
+        ["DB", [1_000_000, 100_000, 6, 1, 7], 186_083.33],
+        ["DB", [1_000_000, 100_000, 6, 2, 7], 259_639.42],
+        ["DB", [1_000_000, 100_000, 6, 7, 7], 15_845.10],
+        ["IRR", [[-70_000, 12_000, 15_000, 18_000, 21_000, 26_000]], 0.08663094803653158],
+        ["MIRR", [[-120_000, 39_000, 59_000, 55_000, 20_000], 0.1, 0.12], 0.1507130731097608],
+        ["RATE", [10, 0, -1_000, 2_000], 0.0717734625363203]
+      ]
+      close_cases.each do |name, arguments, expected|
+        expect(functions.call(name, *arguments)).to be_within(0.005).of(expected), "#{name}(#{arguments.inspect})"
+      end
+
+      ref_error = Furud::ErrorValue.new(code: :ref)
+      na_error = Furud::ErrorValue.new(code: :na)
+      exact_cases = [
+        ["ISERR", [ref_error], true], ["ISERR", [na_error], false],
+        ["ISEVEN", [4], true], ["ISFORMULA", ["=A1"], false],
+        ["ISLOGICAL", [false], true], ["ISNA", [na_error], true],
+        ["ISNONTEXT", [42], true], ["ISODD", [3], true], ["ISTEXT", ["text"], true],
+        ["NA", [], na_error],
+        ["SUMIF", [["a", "b", "a"], "a", [10, 20, 30]], 40],
+        ["SUMIFS", [[10, 20, 30, 40], ["a", "b", "a", "a"], "a", [1, 2, 3, 1], ">1"], 30],
+        ["SUMIFS", [Furud::ArrayValue.new(rows: [[1, 2], [3, 4]]), ["a", "b", "c", "d"], "a"], Furud::ErrorValue.new(code: :value)],
+        ["XLOOKUP", [20, Furud::ArrayValue.new(rows: [[10], [20], [30]]), Furud::ArrayValue.new(rows: [["a"], ["b"], ["c"]])], "b"],
+        ["XLOOKUP", [20, [10, 20, 30], ["a", "b", "c"], "missing"], "b"]
+      ]
+      exact_cases.each do |name, arguments, expected|
+        expect(functions.call(name, *arguments)).to eq(expected), "#{name}(#{arguments.inspect})"
+      end
+      expect(functions.call("IRR", [-100, 110], 0.05)).to be_within(1e-9).of(0.1)
+      expect(functions.call("DB", 100, 10, 5, 0)).to eq(Furud::ErrorValue.new(code: :num))
+    end
+
+    it "limits XLOOKUP to exact forward matching and validates result dimensions" do
+      functions = described_class.standard
+      lookups = Furud::ArrayValue.new(rows: [[10], [20], [30]])
+      results = Furud::ArrayValue.new(rows: [["a", "A"], ["b", "B"], ["c", "C"]])
+      expect(functions.call("XLOOKUP", 20, lookups, results)).to eq(Furud::ArrayValue.new(rows: [["b", "B"]]))
+      expect(functions.call("XLOOKUP", 20, [10, 20, 30], ["a", "b", "c"], "missing", -1)).to eq(Furud::ErrorValue.new(code: :value))
+      expect(functions.call("XLOOKUP", 20, [10, 20, 30], ["a", "b", "c"], "missing", 0.5)).to eq(Furud::ErrorValue.new(code: :value))
+      expect(functions.call("XLOOKUP", 20, [10, 20, 30], ["a", "b"], "missing")).to eq(Furud::ErrorValue.new(code: :value))
+      expect(functions.call("XLOOKUP", 40, [10, 20, 30], ["a", "b", "c"])).to eq(Furud::ErrorValue.new(code: :na))
+      horizontal = Furud::ArrayValue.new(rows: [[10, 20, 30]])
+      returns = Furud::ArrayValue.new(rows: [["a", "b", "c"], ["d", "e", "f"]])
+      expect(functions.call("XLOOKUP", 20, horizontal, returns)).to eq(Furud::ArrayValue.new(rows: [["b"], ["e"]]))
+    end
+
+    it "checks volatile function result ranges and volatility metadata" do
+      functions = described_class.standard
+      %w[NOW TODAY RAND RANDBETWEEN OFFSET].each do |name|
+        expect(functions[name].volatile).to be(true), name
+      end
+
+      before = Time.now
+      now = functions.call("NOW")
+      after = Time.now
+      expect(now).to be_between(before, after).inclusive
+      expect(functions.call("TODAY")).to eq(Date.today)
+      expect(functions.call("RAND")).to be_between(0.0, 1.0).exclusive
+      expect(functions.call("RANDBETWEEN", 7, 7)).to eq(7)
+      100.times do
+        value = functions.call("RANDBETWEEN", 2, 5)
+        expect(value).to be_a(Integer)
+        expect(value).to be_between(2, 5).inclusive
+      end
+    end
+
+    it "keeps reference-dependent functions in Engine and reports unsupported CELL metadata" do
+      functions = described_class.standard
+      expect(functions.call("CELL", "filename")).to eq(Furud::ErrorValue.new(code: :value))
+      expect(functions.call("ISFORMULA", "=A1")).to be(false)
+
+      engine = Furud::Engine.new
+      engine.set(ref(1, 1), 3)
+      engine.set(ref(2, 1), 4)
+      engine.set(ref(1, 2), "=ISFORMULA(A1)")
+      engine.set(ref(1, 3), "=ISFORMULA(B1)")
+      engine.set(ref(2, 2), "=INDIRECT(\"A1\")")
+      engine.set(ref(2, 3), "=OFFSET(A1,1,0)")
+      expect(engine.value(ref(1, 2))).to be(false)
+      expect(engine.value(ref(1, 3))).to be(true)
+      expect(engine.value(ref(2, 2))).to eq(3)
+      expect(engine.value(ref(2, 3))).to eq(4)
+    end
+
     it "validates custom function arity and propagates standard errors" do
       functions = Furud::Functions::Registry.new
       functions.register("TWICE", arity: 1) { |number| number * 2 }

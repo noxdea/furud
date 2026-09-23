@@ -215,10 +215,14 @@ module Furud
         values.each_index.sum { |i| criterion_match?(values[i], criteria) ? number_or_zero(sums[i]) : 0 }
       end
       register(registry, "SUMIFS", 3..255) do |sum_range, *xs|
-        sums = flatten([sum_range]); ranges = xs.each_slice(2).map { |r, c| [flatten([r]), c] }
+        sum_rows = row_matrix(sum_range); ranges = xs.each_slice(2).map { |r, c| [row_matrix(r), c] }
         if xs.length.odd?
           ErrorValue.new(code: :value)
+        elsif ranges.any? { |rows, _| rows.map(&:length) != sum_rows.map(&:length) }
+          ErrorValue.new(code: :value)
         else
+          sums = sum_rows.flatten
+          ranges = ranges.map { |rows, criteria| [rows.flatten, criteria] }
           (0...sums.length).sum { |i| ranges.all? { |values, criteria| values[i] && criterion_match?(values[i], criteria) } ? number_or_zero(sums[i]) : 0 }
         end
       end
@@ -361,9 +365,34 @@ module Furud
       end
       register(registry, "VLOOKUP", 3..4) { |lookup, table, column, approximate = false| lookup_table(lookup, table, integer!(column), vertical: true, approximate: truthy?(approximate)) }
       register(registry, "HLOOKUP", 3..4) { |lookup, table, row, approximate = false| lookup_table(lookup, table, integer!(row), vertical: false, approximate: truthy?(approximate)) }
-      register(registry, "XLOOKUP", 3..6) do |lookup, lookups, results, _not_found = ErrorValue.new(code: :na), match_mode = 0, _search_mode = 1|
-        values = flatten([lookups]); index = values.index { |x| compare(x, lookup).zero? }
-        index ? flatten([results])[index] : _not_found
+      register(registry, "XLOOKUP", 3..6) do |lookup, lookups, results, not_found = ErrorValue.new(code: :na), match_mode = 0, search_mode = 1|
+        lookup_rows = row_matrix(lookups); result_rows = row_matrix(results)
+        rectangular = ->(rows) { !rows.empty? && rows.all? { |row| row.is_a?(Array) && row.length == rows.first.length } }
+        vector = rectangular.call(lookup_rows) && !lookup_rows.first.empty? &&
+          (lookup_rows.length == 1 || lookup_rows.all? { |row| row.length == 1 })
+        if !vector || !rectangular.call(result_rows) || result_rows.first.empty?
+          ErrorValue.new(code: :value)
+        elsif number!(match_mode) != 0 || number!(search_mode) != 1
+          ErrorValue.new(code: :value)
+        else
+          horizontal = lookup_rows.length == 1
+          lookup_values = horizontal ? lookup_rows.first : lookup_rows.map(&:first)
+          result_shape_matches = horizontal ? result_rows.all? { |row| row.length == lookup_values.length } : result_rows.length == lookup_values.length
+          next ErrorValue.new(code: :value) unless result_shape_matches
+
+          index = lookup_values.index { |value| compare(value, lookup).zero? }
+          if index
+            if horizontal
+              values = result_rows.map { |row| row[index] }
+              values.length == 1 ? values.first : ArrayValue.new(rows: values.map { |value| [value] })
+            else
+              values = result_rows[index]
+              values.length == 1 ? values.first : ArrayValue.new(rows: [values])
+            end
+          else
+            not_found
+          end
+        end
       end
       register(registry, "LOOKUP", 2..3) do |lookup, vector, result = vector|
         v = flatten([vector]); r = flatten([result]); i = v.rindex { |x| compare(x, lookup) <= 0 }
@@ -400,7 +429,7 @@ module Furud
       register(registry, "ISLOGICAL", 1) { |x| x == true || x == false }
       register(registry, "ISEVEN", 1) { |x| integer!(x).even? }
       register(registry, "ISODD", 1) { |x| integer!(x).odd? }
-      register(registry, "ISFORMULA", 1) { |x| x.is_a?(String) && x.start_with?("=") }
+      register(registry, "ISFORMULA", 1) { |_x| false }
       register(registry, "N", 1) { |x| x == true ? 1 : x == false || x.nil? || x.is_a?(String) ? 0 : x.is_a?(ErrorValue) ? x : number!(x) }
       register(registry, "NA", 0) { ErrorValue.new(code: :na) }
       register(registry, "TYPE", 1) { |x| x.is_a?(Numeric) ? 1 : x.is_a?(String) ? 2 : x == true || x == false ? 4 : x.is_a?(ErrorValue) ? 16 : 64 }
@@ -413,7 +442,7 @@ module Furud
       end
       register(registry, "FORMULATEXT", 1) { |x| x.is_a?(String) && x.start_with?("=") ? x : ErrorValue.new(code: :na) }
       register(registry, "HYPERLINK", 1..2) { |url, label = url| text(label) }
-      register(registry, "CELL", 1..2) { |info, _ref = nil| text(info).downcase == "filename" ? "" : ErrorValue.new(code: :value) }
+      register(registry, "CELL", 1..2) { |_info, _ref = nil| ErrorValue.new(code: :value) }
       register(registry, "ISREF", 1) { |x| x.is_a?(Reference) || x.is_a?(Area) }
       register(registry, "INDIRECT", 1..2) { |_ref, _a1 = true| ErrorValue.new(code: :ref) }
       register(registry, "OFFSET", 3..5, volatile: true) { |_ref, _rows, _columns, _height = 1, _width = 1| ErrorValue.new(code: :ref) }
@@ -511,13 +540,15 @@ module Furud
       register(registry, "NPV", 2..255) do |rate, *values|
         r = number!(rate); numeric_values(values).each_with_index.sum { |value, i| value / ((1 + r)**(i + 1)) }
       end
-      register(registry, "IRR", 1..2) { |values, _guess = 0.1| irr(numeric_values([values])) }
+      register(registry, "IRR", 1..2) do |*args|
+        irr(numeric_values([args.fetch(0)]), number!(args.fetch(1, 0.1)))
+      end
       register(registry, "MIRR", 3) { |values, finance, reinvestment| mirr(numeric_values([values]), number!(finance), number!(reinvestment)) }
       register(registry, "RATE", 3..6) { |periods, payment, present, future = 0, timing = 0, guess = 0.1| rate(number!(periods), number!(payment), number!(present), number!(future), number!(timing), number!(guess)) }
       register(registry, "SLN", 3) { |cost, salvage, life| (number!(cost) - number!(salvage)) / number!(life) }
       register(registry, "SYD", 4) { |cost, salvage, life, period| 2 * (number!(cost) - number!(salvage)) * (number!(life) - number!(period) + 1) / (number!(life) * (number!(life) + 1)) }
       register(registry, "DDB", 4..5) { |cost, salvage, life, period, factor = 2| ddb(number!(cost), number!(salvage), number!(life), number!(period), number!(factor)) }
-      register(registry, "DB", 4..5) { |cost, salvage, life, period, month = 12| (number!(cost) - number!(salvage)) * (1 - (number!(salvage) / number!(cost))**(1 / number!(life))).round(3) * (integer!(period) == 1 ? integer!(month) / 12.0 : 1) }
+      register(registry, "DB", 4..5) { |cost, salvage, life, period, month = 12| db(number!(cost), number!(salvage), number!(life), integer!(period), integer!(month)) }
       register(registry, "EFFECT", 2) { |nominal, periods| (1 + number!(nominal) / integer!(periods))**integer!(periods) - 1 }
       register(registry, "NOMINAL", 2) { |effective, periods| integer!(periods) * ((1 + number!(effective))**(1 / integer!(periods)) - 1) }
     end
@@ -660,6 +691,11 @@ module Furud
       value.is_a?(ArrayValue) ? value.rows : value.is_a?(Array) ? value : [[value]]
     end
 
+    def row_matrix(value)
+      rows = matrix(value)
+      rows.empty? || !rows.first.is_a?(Array) ? [rows] : rows
+    end
+
     def lookup_table(lookup, table, index, vertical:, approximate: false)
       rows = matrix(table)
       return ErrorValue.new(code: :ref) unless index.positive?
@@ -676,8 +712,7 @@ module Furud
     def weekday(date, type) = type == 2 ? ((date.wday + 6) % 7) + 1 : type == 3 ? (date.wday + 6) % 7 : date.wday + 1
     def year_fraction(a, b, basis) = basis == 1 ? (b - a).to_i / (a.leap? ? 366.0 : 365.0) : (b.year - a.year) + (b.yday - a.yday) / 365.0
 
-    def irr(values)
-      guess = 0.1
+    def irr(values, guess = 0.1)
       100.times do
         value = values.each_with_index.sum { |cash, i| cash / (1 + guess)**i }
         derivative = values.each_with_index.sum { |cash, i| i.zero? ? 0 : -i * cash / (1 + guess)**(i + 1) }
@@ -711,6 +746,26 @@ module Furud
 
     def rate_equation(n, pmt, pv, fv, type, rate)
       pv * (1 + rate)**n + pmt * (1 + rate * type) * ((1 + rate)**n - 1) / rate + fv
+    end
+
+    def db(cost, salvage, life, period, month)
+      raise RangeError unless cost.positive? && salvage >= 0 && salvage < cost && life.positive? && period.positive? && month.between?(1, 12)
+      raise RangeError if period > life.ceil + (month < 12 ? 1 : 0)
+
+      rate = (1 - (salvage / cost.to_f)**(1.0 / life)).round(3)
+      book_value = cost
+      depreciation = 0.0
+      1.upto(period) do |current|
+        depreciation = if current == 1
+                         cost * rate * month / 12.0
+                       elsif month < 12 && current == life.ceil + 1
+                         book_value * rate * (12 - month) / 12.0
+                       else
+                         book_value * rate
+                       end
+        book_value -= depreciation
+      end
+      depreciation
     end
 
     def ddb(cost, salvage, life, period, factor)
