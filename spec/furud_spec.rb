@@ -288,6 +288,36 @@ RSpec.describe Furud do
       expect(engine.value(ref(6, 6))).to eq("right")
     end
 
+    it "spills UNIQUE rows and columns, including exactly-once results" do
+      engine = described_class.new
+      [[1, "a"], [1, "a"], [2, "b"], [3, "c"]].each_with_index do |row, row_index|
+        row.each_with_index { |value, column_index| engine.set(ref(row_index + 1, column_index + 1), value) }
+      end
+      engine.set(ref(1, 4), "=UNIQUE(A1:B4,FALSE,TRUE)")
+      engine.set(ref(1, 7), "=UNIQUE(A1:B4)")
+
+      expect(engine.value(ref(1, 4))).to eq(2)
+      expect(engine.value(ref(1, 5))).to eq("b")
+      expect(engine.value(ref(2, 4))).to eq(3)
+      expect(engine.value(ref(2, 5))).to eq("c")
+      expect(engine.value(ref(1, 7))).to eq(1)
+      expect(engine.value(ref(1, 8))).to eq("a")
+      expect(engine.value(ref(2, 7))).to eq(2)
+      expect(engine.value(ref(3, 7))).to eq(3)
+
+      [[1, 1, 2, 3], [4, 4, 5, 6], [7, 7, 8, 9]].each_with_index do |row, row_index|
+        row.each_with_index { |value, column_index| engine.set(ref(row_index + 7, column_index + 1), value) }
+      end
+      engine.set(ref(7, 6), "=UNIQUE(A7:D9,TRUE,TRUE)")
+
+      expect(engine.value(ref(7, 6))).to eq(2)
+      expect(engine.value(ref(7, 7))).to eq(3)
+      expect(engine.value(ref(8, 6))).to eq(5)
+      expect(engine.value(ref(8, 7))).to eq(6)
+      expect(engine.value(ref(9, 6))).to eq(8)
+      expect(engine.value(ref(9, 7))).to eq(9)
+    end
+
     it "uses FILTER fallbacks, reports empty results, and validates include masks" do
       engine = described_class.new
       engine.set(ref(1, 1), 1)
@@ -411,6 +441,65 @@ RSpec.describe Furud do
       expect(functions.call("LEFT", "Canopus", 3)).to eq("Can")
       expect(functions.call("DATE", 2024, 2, 30)).to eq(Date.new(2024, 3, 1))
       expect(functions.call("FILTER", [[1, 2], [3, 4]], [true, false]).rows).to eq([[1], [3]])
+    end
+
+    it "matches the UNIQUE row, column, and exactly-once case table" do
+      functions = described_class.standard
+      rows = Furud::ArrayValue.new(rows: [[1, "a"], [1, "a"], [2, "b"], [3, "c"]])
+      columns = Furud::ArrayValue.new(rows: [[1, 1, 2, 3], [4, 4, 5, 6], [7, 7, 8, 9]])
+      error = Furud::ErrorValue.new(code: :ref)
+      cases = [
+        ["unique rows", [rows], [[1, "a"], [2, "b"], [3, "c"]]],
+        ["flat list", [[1, 2, 1]], [[1], [2]]],
+        ["one row", [Furud::ArrayValue.new(rows: [[1, 1, 2]])], [[1, 1, 2]]],
+        ["singleton rows", [rows, false, true], [[2, "b"], [3, "c"]]],
+        ["unique columns", [columns, true], [[1, 2, 3], [4, 5, 6], [7, 8, 9]]],
+        ["singleton columns", [columns, true, true], [[2, 3], [5, 6], [8, 9]]],
+        ["numeric logical flags", [columns, 1, 1], [[2, 3], [5, 6], [8, 9]]],
+        ["empty singleton result", [Furud::ArrayValue.new(rows: [[1], [1]]), false, true], Furud::ErrorValue.new(code: :calc)],
+        ["invalid logical flag", [rows, "TRUE"], Furud::ErrorValue.new(code: :value)],
+        ["out-of-range logical flag", [rows, 2], Furud::ErrorValue.new(code: :value)],
+        ["ragged array", [[[1], [2, 3]]], Furud::ErrorValue.new(code: :value)],
+        ["input error propagation", [Furud::ArrayValue.new(rows: [[error]])], error],
+        ["missing array argument", [], Furud::ErrorValue.new(code: :value)],
+        ["too many arguments", [rows, false, true, 0], Furud::ErrorValue.new(code: :value)]
+      ]
+
+      cases.each do |label, arguments, expected|
+        result = functions.call("UNIQUE", *arguments)
+        expect(result.is_a?(Furud::ArrayValue) ? result.rows : result).to eq(expected), label
+      end
+    end
+
+    it "checks selected standard function cases with exact error values" do
+      functions = described_class.standard
+      reference_error = Furud::ErrorValue.new(code: :ref)
+      division_error = Furud::ErrorValue.new(code: :div0)
+      calc_error = Furud::ErrorValue.new(code: :calc)
+      array = Furud::ArrayValue.new(rows: [[1], [2]])
+      mismatch = Furud::ArrayValue.new(rows: [[true, false], [false, true]])
+      include_error = Furud::ArrayValue.new(rows: [[true], [reference_error]])
+      match_values = Furud::ArrayValue.new(rows: [[10], [20], [30]])
+      cases = [
+        ["ABS", [-5], 5],
+        ["SUM", [1, 2, 3], 6],
+        ["SUM", [1, reference_error], reference_error],
+        ["AVERAGE", [1, 2, 3], 2.0],
+        ["AVERAGE", [array, reference_error], reference_error],
+        ["VAR.S", [4], division_error],
+        ["IFERROR", [reference_error, "fallback"], "fallback"],
+        ["LEFT", ["Canopus", 3], "Can"],
+        ["DATE", [2024, 2, 29], Date.new(2024, 2, 29)],
+        ["MATCH", [20, match_values, 0], 2],
+        ["PMT", [0, 10, 1000], -100.0],
+        ["FILTER", [array, mismatch], Furud::ErrorValue.new(code: :value)],
+        ["FILTER", [array, include_error], reference_error],
+        ["ERROR.TYPE", [calc_error], 14]
+      ]
+
+      cases.each do |name, arguments, expected|
+        expect(functions.call(name, *arguments)).to eq(expected), "#{name}(#{arguments.inspect})"
+      end
     end
 
     it "validates custom function arity and propagates standard errors" do

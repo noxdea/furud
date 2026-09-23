@@ -448,7 +448,26 @@ module Furud
         sorted.reverse! if integer!(order).negative?
         ArrayValue.new(rows: columns ? sorted.transpose : sorted)
       end
-      register(registry, "UNIQUE", 1..3) { |x, _by_col = false, _exactly_once = false| values = matrix(x).flatten.uniq; ArrayValue.new(rows: values.map { |v| [v] }) }
+      unique = lambda do |array, by_col = false, exactly_once = false|
+        rows = matrix(array)
+        rows = rows.map { |value| [value] } if array.is_a?(Array) && !array.first.is_a?(Array)
+        invalid_matrix = rows.empty? || !rows.first.is_a?(Array) || rows.first.empty? ||
+          rows.any? { |row| !row.is_a?(Array) || row.length != rows.first.length }
+        valid_flags = [true, false, 0, 1].include?(by_col) && [true, false, 0, 1].include?(exactly_once)
+
+        if invalid_matrix || !valid_flags
+          ErrorValue.new(code: :value)
+        else
+          columns = by_col == true || by_col == 1
+          only_once = exactly_once == true || exactly_once == 1
+          items = columns ? rows.transpose : rows
+          counts = items.tally
+          unique = items.uniq
+          unique.select! { |item| counts.fetch(item) == 1 } if only_once
+          unique.empty? ? ErrorValue.new(code: :calc) : ArrayValue.new(rows: columns ? unique.transpose : unique)
+        end
+      end
+      registry.register("UNIQUE", arity: 1..3, &unique)
     end
 
     def register_finance(registry)

@@ -74,7 +74,7 @@ Formula errors are values: `#DIV/0!`, `#VALUE!`, `#REF!`, `#NAME?`, `#N/A`, `#NU
 
 Array constants and dynamic-array functions such as `SEQUENCE`, `TRANSPOSE`, and `UNIQUE` return a top-left value and spill into adjacent empty cells. Furud never overwrites non-empty cells; a blocked spill returns `#SPILL!`.
 
-Array support is an MVP subset: rectangular constants, scalar broadcasting, and selected functions (`SEQUENCE`, `SORT`, `TRANSPOSE`, `UNIQUE`, `FILTER`) are supported. `FILTER` accepts row or column masks and an optional empty-result fallback; full spreadsheet dynamic-array semantics are not.
+Array support is an MVP subset: rectangular constants, scalar broadcasting, and selected functions (`SEQUENCE`, `SORT`, `TRANSPOSE`, `UNIQUE`, `FILTER`) are supported. `FILTER` accepts row or column masks and an optional empty-result fallback. `UNIQUE` compares rows by default or columns with `by_col`, and `exactly_once` keeps only rows or columns that occur once; its mode arguments accept logical values or `0`/`1`, and an empty result is `#CALC!`. Full spreadsheet dynamic-array semantics are not.
 
 ## Number formats
 
