@@ -8,11 +8,9 @@ GEM
   specs:
     diff-lcs (1.6.2)
     logger (1.7.0)
-    prism (1.9.0)
     rake (13.4.2)
-    rbs (4.2.0)
+    rbs (3.10.4)
       logger
-      prism (>= 1.6.0)
       tsort
     rspec (3.13.2)
       rspec-core (~> 3.13.0)
@@ -36,7 +34,7 @@ PLATFORMS
 DEPENDENCIES
   furud!
   rake (~> 13.0)
-  rbs
+  rbs (~> 3.9)
   rspec (~> 3.0)
 
 CHECKSUMS
@@ -44,9 +42,8 @@ CHECKSUMS
   diff-lcs (1.6.2) sha256=9ae0d2cba7d4df3075fe8cd8602a8604993efc0dfa934cff568969efb1909962
   furud (0.1.0)
   logger (1.7.0) sha256=196edec7cc44b66cfb40f9755ce11b392f21f7967696af15d274dde7edff0203
-  prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
   rake (13.4.2) sha256=cb825b2bd5f1f8e91ca37bddb4b9aaf345551b4731da62949be002fa89283701
-  rbs (4.2.0) sha256=51f7b886dcc05bc09e10b901daa6a81829f6adc03101d6ca9ea4aac6103e0674
+  rbs (3.10.4) sha256=b17d7c4be4bb31a11a3b529830f0aa206a807ca42f2e7921a3027dfc6b7e5ce8
   rspec (3.13.2) sha256=206284a08ad798e61f86d7ca3e376718d52c0bc944626b2349266f239f820587
   rspec-core (3.13.6) sha256=a8823c6411667b60a8bca135364351dda34cd55e44ff94c4be4633b37d828b2d
   rspec-expectations (3.13.5) sha256=33a4d3a1d95060aea4c94e9f237030a8f9eae5615e9bd85718fe3a09e4b58836
